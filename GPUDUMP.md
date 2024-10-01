@@ -20,7 +20,7 @@ The magic header serves to identify the file format and version. The first 10 by
 
 Each packet consists of a header and a payload. The header is 4 bytes long and contains the following fields:
 
-| Byte 0-2 | Byte 1 |
+| Byte 0-2 | Byte 3  |
 |----------|---------|
 | Length   | Type    |
 
@@ -40,9 +40,11 @@ The following packet types are defined in revision 1 of the GPU dump file format
 | 0x02 | VSync event                       |
 | 0x03 | Throw away port 0 data            |
 | 0x04 | Readback port 0 data              |
-| 0x05 | Game ID                           |
-| 0x06 | Textual video format              |
-| 0x07 | Comment                           |
+| 0x05 | Trace begin                       |
+| 0x06 | GPU version                       |
+| 0x10 | Game ID                           |
+| 0x11 | Textual video format              |
+| 0x12 | Comment                           |
 
 ### Description of Packet Types
 
@@ -51,9 +53,11 @@ The following packet types are defined in revision 1 of the GPU dump file format
 - **VSync event (0x02)**: This packet type indicates a vertical synchronization event. The payload is of variable size, and can be 0, 1, or 2. If non-zero, it contains a single word representing the timestamp of the VSync event, counted in CPU cycles. If the payload is 1, the timestamp will roll over every 2^32 cycles, which would mean that the timestamp is not guaranteed to be unique as it will wrap around roughly every 2 minutes given a 33.8688Mhz clock, whereas a payload of size 2 will roll over every 2^64 cycles, virtually guaranteeing uniqueness as it would take over 17250 years to wrap around. The purpose of this packet is to allow for synchronization of multiple frames animated in a scene.
 - **Throw away port 0 data (0x03)**: This packet type indicates that data needs to be read from GPU port 0, but the data is not needed and can be discarded. The payload is a single 32-bit word indicating the number of words to discard. This is useful when the previous command was a VRAM read, in order to restore the GPU state without needing to read back the data.
 - **Readback port 0 data (0x04)**: This packet type indicates that data is being read back from GPU port 0. The method of sending this data back is not defined in this document, but it is expected to be unstructured binary data. The payload is a single 32-bit word indicating the number of words to read and send back. This packet should be used when the previous command was a VRAM read.
-- **Game ID (0x05)**: This packet type contains a zero-padded string representing the ID of the game being run, if available. This can be useful for identifying which game the GPU dump file corresponds to. A game ID should be in the format `SLUS-12345` to maintain interoperability with game databases.
-- **Textual video format (0x06)**: This packet type contains a zero-padded string representing the video format being used, either "PAL" or "NTSC". Since the GPU is configured using port 1 commands, this packet is only used for informational purposes, similar to the comment packet.
-- **Comment (0x07)**: This packet type allows for the inclusion of comments in the GPU dump file. The payload consists of a zero-padded string, which can be used to provide additional context or information about the GPU dump, such as the tool name which was used to create the dump, as well as its version number.
+- **Trace begin (0x05)**: This packet has a size of 0, and indicates the trace actually begins. Any packet type between 0x00 and 0x04 before it have been synthetically generated for the sake of restoring the state of the GPU, and did not actually come from any record.
+- **GPU Version (0x06)**: This packet type contains exactly a single word describing the GPU version and VRAM size. A value of 1 means version 1 of the GPU, with 1MB of VRAM attached to it. A value of 2 means version 2 of the GPU, with 1MB of VRAM attached to it. A value of 3 means version 2 of the GPU, with 2MB of VRAM attached to it. All other values are reserved. This packet is only valid before any packet type between 0x00 and 0x05.
+- **Game ID (0x10)**: This packet type contains a zero-padded string representing the ID of the game being run, if available. This can be useful for identifying which game the GPU dump file corresponds to. A game ID should be in the format `SLUS-12345` to maintain interoperability with game databases.
+- **Textual video format (0x11)**: This packet type contains a zero-padded string representing the video format being used, either "PAL" or "NTSC". Since the GPU is configured using port 1 commands, this packet is only used for informational purposes, similar to the comment packet.
+- **Comment (0x12)**: This packet type allows for the inclusion of comments in the GPU dump file. The payload consists of a zero-padded string, which can be used to provide additional context or information about the GPU dump, such as the tool name which was used to create the dump, as well as its version number.
 
 ## Usage suggestion
 
