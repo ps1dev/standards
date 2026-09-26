@@ -6,7 +6,7 @@ The GPU dump file format is designed to be extensible, allowing for future enhan
 
 ## Structure of a GPU Dump File
 
-A GPU dump file is consists of a magic header, followed by a series of packets. The magic header is exactly 16 bytes long. A packet consists of a header followed by a payload. The header of a packet is 4 bytes long, and the payload can vary in size depending on the type of packet. The total size of a packet (header + payload) must also be a multiple of 4 bytes.
+A GPU dump file consists of a magic header, followed by a series of packets. The magic header is exactly 16 bytes long. A packet consists of a header followed by a payload. The header of a packet is 4 bytes long, and the payload can vary in size depending on the type of packet. The total size of a packet (header + payload) must also be a multiple of 4 bytes.
 
 ### Magic Header
 
@@ -28,6 +28,8 @@ Each packet consists of a header and a payload. The header is 4 bytes long and c
 - **Type**: The type of the packet, stored in the highest byte of the header. The type is a single byte that indicates the kind of data contained in the payload. The type is used to determine how to interpret the payload.
 
 A tool that reads a GPU dump file must be able to handle unknown packet types gracefully, skipping over them using the `Length` field, ignoring them without causing an error.
+
+Packets do not follow GP0 command boundaries. A GP0 command may span several GP0 packets, with other packets, such as GP1 data, between them.
 
 ### Packet Types
 
@@ -53,6 +55,8 @@ The following packet types are defined in revision 1 of the GPU dump file format
 - **VSync event (0x02)**: This packet type indicates a vertical synchronization event. The payload is of variable size, and can be 0, 1, or 2. If non-zero, it contains a single word representing the timestamp of the VSync event, counted in CPU cycles. If the payload is 1, the timestamp will roll over every 2^32 cycles, which would mean that the timestamp is not guaranteed to be unique as it will wrap around roughly every 2 minutes given a 33.8688Mhz clock, whereas a payload of size 2 will roll over every 2^64 cycles, virtually guaranteeing uniqueness as it would take over 17250 years to wrap around. The purpose of this packet is to allow for synchronization of multiple frames animated in a scene.
 - **Throw away port 0 data (0x03)**: This packet type indicates that data needs to be read from GPU port 0, but the data is not needed and can be discarded. The payload is a single 32-bit word indicating the number of words to discard. This is useful when the previous command was a VRAM read, in order to restore the GPU state without needing to read back the data.
 - **Readback port 0 data (0x04)**: This packet type indicates that data is being read back from GPU port 0. The method of sending this data back is not defined in this document, but it is expected to be unstructured binary data. The payload is a single 32-bit word indicating the number of words to read and send back. This packet should be used when the previous command was a VRAM read.
+
+The word count of the two packets above covers every word the recorded program read from GPU port 0, whether it came from a VRAM read or from a GPU information query sent through port 1.
 - **Trace begin (0x05)**: This packet has a size of 0, and indicates the trace actually begins. Any packet type between 0x00 and 0x04 before it have been synthetically generated for the sake of restoring the state of the GPU, and did not actually come from any record.
 - **GPU Version (0x06)**: This packet type contains exactly a single word describing the GPU version and VRAM size. A value of 1 means version 1 of the GPU, with 1MB of VRAM attached to it. A value of 2 means version 2 of the GPU, with 1MB of VRAM attached to it. A value of 3 means version 2 of the GPU, with 2MB of VRAM attached to it. All other values are reserved. This packet is only valid before any packet type between 0x00 and 0x05.
 - **Game ID (0x10)**: This packet type contains a zero-padded string representing the ID of the game being run, if available. This can be useful for identifying which game the GPU dump file corresponds to. A game ID should be in the format `SLUS-12345` to maintain interoperability with game databases.
@@ -63,7 +67,7 @@ The following packet types are defined in revision 1 of the GPU dump file format
 
 Informational fields, such as the game ID and video format, should be included in the dump file as early as possible, ideally right after the magic header.
 
-Then, in order to provide a properly replayable GPU dump file, any tool that generates a GPU dump file should first start by sending out a manufactured VRAM write command to the GPU, followed by a full VRAM dump, and the state of the GPU can be restored by sending a series of manufactured commands sent to the GPU port 1, setting for example the display area or the display mode.
+Then, in order to provide a properly replayable GPU dump file, any tool that generates a GPU dump file should first start by sending out a manufactured VRAM write command to the GPU, followed by a full VRAM dump, and the state of the GPU can be restored by sending a series of manufactured commands sent to the GPU port 1, setting for example the display area or the display mode. The drawing environment is also part of the state to restore: the texture page, texture window, drawing area, drawing offset, and mask bit settings are set through port 0 commands E1h to E6h, and should be sent as manufactured port 0 data before the trace begin packet.
 
 After that, the tool can start writing data as captured from the GPU.
 
