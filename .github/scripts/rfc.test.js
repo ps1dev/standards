@@ -102,3 +102,31 @@ test('run sets statuses, comments on labeling, rewrites the index', async () => 
     assert.strictEqual(update.issue_number, 47);
     assert.match(update.body, /\| #37 monitor: protocol v3 \| 2026-09-08 12:00 UTC \|/);
 });
+
+test('index escapes mentions in titles', () => {
+    const body = rfc.indexBody('o', 'r', [{ number: 1, title: 'ping @someone | x', notBefore: 0 }]);
+    assert.ok(!body.includes('@someone'));
+    assert.match(body, /&#64;someone \\\| x/);
+});
+
+test('a shared head commit gets the failing verdict', async () => {
+    const statuses = [];
+    const prs = [
+        { number: 1, title: 'a', labels: [{ name: 'rfc' }], head: { sha: 'same' }, user: { login: 'x' } },
+        { number: 2, title: 'b', labels: [], head: { sha: 'same' }, user: { login: 'x' } },
+    ];
+    const github = {
+        paginate: async (fn, args) => fn(args),
+        rest: {
+            pulls: { list: () => prs },
+            issues: { listEvents: () => [on(t0)], listForRepo: () => [] },
+            repos: {
+                listCommitStatusesForRef: async () => ({ data: [] }),
+                createCommitStatus: async (a) => statuses.push([a.sha, a.state]),
+            },
+        },
+    };
+    const context = { repo: { owner: 'o', repo: 'r' }, eventName: 'schedule', payload: {} };
+    await rfc.run({ github, context, core: { info() {}, warning() {} }, now: t0 + DAY });
+    assert.deepStrictEqual(statuses, [['same', 'failure']]);
+});
