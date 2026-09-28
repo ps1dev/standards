@@ -24,6 +24,8 @@ tool implements it, so a proposal is much stronger with a note on what is going 
 and write it. Extensions get a new packet type; what an existing type means does not
 change.
 
+A pull request that changes a format waits seven days before it can merge; see [RFC.md](RFC.md).
+
 Discussion happens on the [PSX.Dev Discord server](https://discord.gg/QByKPpH).
 
 The documents are MIT-licensed; see [LICENSE](LICENSE).
