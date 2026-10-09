@@ -160,6 +160,21 @@ Marks the current position as the loop restart point. When the player reaches th
 
 Signals the end of the event stream. If looping is enabled and a loop point was set, the player returns to the loop point. Otherwise, playback stops.
 
+### 0x0D - USER
+
+A timed event for the program playing the song, with no effect on the sound. It lets a song carry cues such as section changes or scripted moments that the game or demo reacts to in sync with the music.
+
+| Field     | Description |
+|-----------|-------------|
+| channel   | User tag (0-255). Not a MIDI channel for this event type. |
+| data      | User payload (32 bits), opaque to the player |
+
+The player hands the (tag, payload) pair to the program, typically by queueing it during playback for the program to read once per frame. Tags and payloads are defined by the song's author; the format assigns them no meaning.
+
+The offline tool produces USER events from MIDI Cue Point meta events (`FF 07`) whose text is `tag:payload` in decimal, for example `1:6`. Cue points with any other text are ignored.
+
+A player that does not handle USER events must skip them. Adding them to a song does not change how it sounds.
+
 ### 0xFF - LONG_WAIT
 
 | Data bits | Field          | Description |
@@ -183,6 +198,8 @@ A minimal PSM player performs the following steps:
    - For TEMPO_CHANGE: recalculate timer interval.
    - For LOOP_POINT: record current event index as loop target.
    - For END: jump to loop point or stop.
+   - For USER: pass (tag, payload) to the program.
+   - For any type it does not know: skip the event.
 
 ## Pitch computation
 
