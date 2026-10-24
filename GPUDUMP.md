@@ -44,6 +44,7 @@ The following packet types are defined in revision 1 of the GPU dump file format
 | 0x04 | Readback port 0 data              |
 | 0x05 | Trace begin                       |
 | 0x06 | GPU version                       |
+| 0x07 | Interlace field                   |
 | 0x10 | Game ID                           |
 | 0x11 | Textual video format              |
 | 0x12 | Comment                           |
@@ -59,6 +60,7 @@ The following packet types are defined in revision 1 of the GPU dump file format
 The word count of the two packets above covers every word the recorded program read from GPU port 0, whether it came from a VRAM read or from a GPU information query sent through port 1.
 - **Trace begin (0x05)**: This packet has a size of 0, and indicates the trace actually begins. Any packet type between 0x00 and 0x04 before it have been synthetically generated for the sake of restoring the state of the GPU, and did not actually come from any record.
 - **GPU Version (0x06)**: This packet type contains exactly a single word describing the GPU version and VRAM size. A value of 1 means version 1 of the GPU, with 1MB of VRAM attached to it. A value of 2 means version 2 of the GPU, with 1MB of VRAM attached to it. A value of 3 means version 2 of the GPU, with 2MB of VRAM attached to it. All other values are reserved. This packet is only valid before any packet type between 0x00 and 0x05.
+- **Interlace field (0x07)**: This packet type contains exactly a single word, whose bit 0 is the value of GPUSTAT bit 31 from this point in the stream on. In NTSC 640x480 interlaced with GP0(E1h) bit 10 clear, the GPU skips every row whose parity equals GPUSTAT bit 31 at the time it is drawn, and that bit follows the beam, so a replay cannot derive it from the other packets. A tool should write this packet ahead of the port 0 data it applies to whenever the value changes while that video mode is set. A tool replaying the dump should use the last value seen for GPUSTAT bit 31, and 0 before the first one.
 - **Game ID (0x10)**: This packet type contains a zero-padded string representing the ID of the game being run, if available. This can be useful for identifying which game the GPU dump file corresponds to. A game ID should be in the format `SLUS-12345` to maintain interoperability with game databases.
 - **Textual video format (0x11)**: This packet type contains a zero-padded string representing the video format being used, either "PAL" or "NTSC". Since the GPU is configured using port 1 commands, this packet is only used for informational purposes, similar to the comment packet.
 - **Comment (0x12)**: This packet type allows for the inclusion of comments in the GPU dump file. The payload consists of a zero-padded string, which can be used to provide additional context or information about the GPU dump, such as the tool name which was used to create the dump, as well as its version number.
