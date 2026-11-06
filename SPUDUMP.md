@@ -87,7 +87,7 @@ Each packet consists of a header and a payload. The header is 4 bytes long:
 
 - **End of pattern (0x02)**: The payload size is 0. Signals that the current pattern is complete. The player advances to the next entry in the current order table and begins processing the corresponding pattern. If the current order is the last entry, behavior depends on the order table's loop setting.
 
-- **Loop point (0x03)**: The payload size is 0. Marks the current stream position as the loop restart point within the current pattern. When the player reaches the end of pattern (0x02) and the pattern is set to loop, that is the order table loops from its last entry back to that same entry, it returns to this position instead of the start of the pattern. Only one loop point per pattern is valid; a second loop point overrides the first.
+- **Loop point (0x03)**: The payload size is 0. Marks the current stream position as the loop restart point within the current pattern. When the player reaches the end of pattern (0x02) for the last entry in the current order table, and the order table loops from that entry back to itself, it returns to this position instead of the start of the pattern. Only one loop point per pattern is valid; a second loop point overrides the first.
 
 - **Trace begin (0x04)**: The payload size is 0. Indicates that all preceding packets were synthetically generated to restore SPU state, and that subsequent packets represent actual captured data. This is analogous to the GPU dump format's trace begin packet. For composition-driven files, this packet is not required.
 
@@ -183,7 +183,7 @@ Seeking to an arbitrary order position is accomplished by setting the current or
 
 The reference player, nugget's `spdplayer`, has fixed-size tables. A file meant for it should stay within them; the player ignores what does not fit:
 
-- 256 entries per order table, and 16 order tables.
+- 256 entries per order table. Any number of order tables; the player loads one, the current subsong's, at a time.
 - 256 pattern headers.
 - 128 samples in the sample directory.
 - 256 macros (indices 0-255), of up to 8 register writes each.
