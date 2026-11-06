@@ -134,7 +134,7 @@ Each packet consists of a header and a payload. The header is 4 bytes long:
 
   The payload consists of:
   - 1 word: SPU RAM base address in 8-byte units.
-  - Remaining words: raw ADPCM data, to be DMA'd contiguously starting at the base address. Its length must be a multiple of 64 bytes, padded with zeroes if needed: the SPU DMA moves whole 64-byte blocks, so a player may read up to 60 bytes past a shorter payload.
+  - Remaining words: raw ADPCM data, to be DMA'd contiguously starting at the base address. A writer should pad it with zeroes to a multiple of 64 bytes and keep the whole padded range inside SPU RAM and clear of every other sample's range, since a player that moves whole 64-byte DMA blocks uploads the padding too. A reader must still accept a payload whose length is not a multiple of 64 bytes, as earlier writers produced, and must not upload past its end.
 
 ### Timing Packets
 
