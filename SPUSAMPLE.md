@@ -62,7 +62,7 @@ From each replacement header the reader takes:
 
 A replacement loops when an instrument zone that plays it (its `sampleID` generator names the sample) has `sampleModes` set to 1 or 3. A zone without its own `sampleModes` uses the one in its instrument's global zone, if that zone sets one. Value 3 is played as a plain loop: the loop is not left at key-off.
 
-The loop runs from `dwStartloop` up to, but not including, `dwEndloop`, both counted from the start of the sample. For an SF3 sample they count points of the decoded stream. A loop is only used when its start is before its end and its end is not past the last point; otherwise the replacement does not loop.
+The loop runs from `dwStartloop` up to, but not including, `dwEndloop`. In an SF2 sample both are point indices into the `smpl` chunk, like `dwStart`, so the loop starts `dwStartloop - dwStart` points into the sample and ends `dwEndloop - dwStart` points into it; a `dwStartloop` before `dwStart` means no loop. In an SF3 sample they count points of the decoded stream from its start. A loop is only used when its start is before its end and its end is not past the last point; otherwise the replacement does not loop.
 
 Presets, instruments and all other generators (key ranges, tuning, envelopes, filters, stereo links) are ignored. A pack's replacements are reached through their names, never through a preset.
 
