@@ -66,6 +66,20 @@ The loop runs from `dwStartloop` up to, but not including, `dwEndloop`. In an SF
 
 Presets, instruments and all other generators (key ranges, tuning, envelopes, filters, stereo links) are ignored. A pack's replacements are reached through their names, never through a preset.
 
+### Note records
+
+The bank's comment, the `ICMT` chunk of its `INFO` list read up to its first zero byte, records the note each original sample sounds at pitch 0x1000 (N, below), one line per sample:
+
+```
+spu-note <signature> <note>
+```
+
+`spu-note`, one space, the signature as 16 hexadecimal digits, one space, and the note: one to three decimal digits, optionally followed by a `.` and one or more decimal digits. The note is less than 128. For example, `spu-note 849b04794e5240df 57.5000`.
+
+Lines are separated by line feeds, and a carriage return before a line feed is ignored. A line that does not have exactly this form is not a record and is ignored, so the comment can carry other text. When two records carry the same signature, the later one is used. A record whose signature matches no replacement is ignored.
+
+The records live in the comment because SoundFont editors keep it: Polyphone 2.2, re-saving a bank, keeps `ICMT` byte for byte and drops both a private `INFO` sub-chunk and a private top-level `LIST`.
+
 ## Playing a pack
 
 Sample rates and pitches below are in terms of the SPU's 44100 Hz output: a voice at pitch 0x1000 plays its sample at one point per output sample.
@@ -98,6 +112,10 @@ When a looping replacement's playhead reaches its loop end, the loop length is s
 
 ### The original's note
 
+If the pack has a note record for the replacement's signature, N is the recorded note.
+
+A pack with no record for a replacement is a legacy pack, and the player measures N itself from the original sample. Two players whose measurements of N differ play that replacement at pitches that differ by the same amount, so a writer always records N. The measurement is the one a writer makes, described here.
+
 N is a fractional MIDI note: `69 + 12 x log2(f / 440)`, where f is the fundamental frequency of the original sample decoded at 44100 Hz. Note 69 is 440 Hz, which is A4 in scientific pitch notation. When the original has no fundamental, or when f rounds to a note outside 0 to 127, N is 60.
 
 The original is decoded from its start address with the filter history cleared, as key-on does. A looping original is decoded round its loop until there are at least as many points past the loop start as the analysis needs, with the filter history carried across the loop as playback does. The analysis window is then:
@@ -105,7 +123,7 @@ The original is decoded from its start address with the filter history cleared, 
 - for a looping original, the 16384 points that follow the loop start, decoding round the loop;
 - for a one-shot original, up to 16384 points starting after its attack, where the attack is the first 2048 points or the first eighth of the sample, whichever is shorter.
 
-The estimator that finds f in that window is not specified (see [Unspecified](#unspecified)).
+The estimator that finds f in that window is not specified.
 
 ## Writing a pack
 
@@ -114,9 +132,12 @@ A writer that exports samples from sound RAM so that the unedited pack plays bac
 - the name: its signature, 16 lowercase hexadecimal digits;
 - the sample data: the extent decoded with the filter history cleared, every block in order, 28 points per block, clamped to 16 bits, at rate 44100;
 - the root key: N rounded to the nearest note, and the correction: `(root key - N) x 100` cents rounded, limited to -50 to 50. When N is 60 because the sample has no fundamental or its note is out of range, the root key is 255, which readers take as 60, and the correction is 0;
+- a note record with N, written with four decimal places. N is 60 when the sample has no fundamental, and that is recorded too;
 - if the sample loops: a zone with `sampleModes` 1, a loop start of `(loop block address - start address) / 16 x 28` points, and a loop end equal to the number of points. The sample data then continues past the loop end with 8 points copied from the loop start; a player of the pack plays the loop and never reaches them.
 
 A loop address the game writes to a voice register is not part of a sample and is not exported.
+
+When a bank's comment would not fit every record, the records go into the comment before any other text the writer adds after its first paragraph, and the samples whose records do not fit are legacy samples for a reader.
 
 Played back unedited, such a pack gives N - K + C/100 = 0 to within the half-cent rounding of the correction, so each replacement plays at the original's pitch.
 
@@ -167,7 +188,7 @@ V6, blocks from 0x7ffd0 to the end of sound RAM with no loop end bit: no extent,
 
 ### Reference pack
 
-[spusample/reference.sf2](spusample/reference.sf2) (6634 bytes, MD5 `76b4f71ee3849c10c23231852f5ff922`) has three samples:
+[spusample/reference.sf2](spusample/reference.sf2) (6668 bytes, MD5 `31fc630f0a9e14da6024a10bab65314f`) has three samples, and its comment carries one note record, `spu-note 849b04794e5240df 57.5000`:
 
 | Sample header      | Points | Rate  | Root key | Correction | Loop       |
 |--------------------|--------|-------|----------|------------|------------|
@@ -177,13 +198,13 @@ V6, blocks from 0x7ffd0 to the end of sound RAM with no loop end bit: no extent,
 
 A reader finds two replacements and ignores the third sample. The first is a 441 Hz sine, looped over one 100-point period, and replaces V2. The second is decaying noise, unpitched, and replaces V1. V3 has no replacement.
 
-At pitch 0x1000 the playhead of the V2 replacement advances 0.593231317 points per output sample when the original's note N is 60, and 0.997692177 when N is 69. The V1 replacement advances 0.5 points per output sample when N is 60.
+At pitch 0x1000 the playhead of the V2 replacement advances 0.513463394 points per output sample, from its recorded N of 57.5. Without the record it would advance 0.593231317 points for an N of 60, or 0.997692177 for an N of 69. The V1 replacement has no record, so its N is measured; for an N of 60 it advances 0.5 points per output sample.
 
 ## Unspecified
 
 These are left to the implementation, and two implementations may differ on them:
 
-- The fundamental frequency estimator. Two players whose estimators measure a different N for the same original play its replacement at pitches that differ by that difference, and a player that finds no fundamental where another finds one uses N = 60. The pack does not record the original's note.
+- The fundamental frequency estimator used for a legacy replacement, one with no note record.
 - How the replacement is interpolated between its points, and across its loop.
 - The exact moment within a key-on at which sound RAM is read for the signature, relative to transfers into sound RAM that are in progress.
 - What happens to a playing replacement when emulator state is restored from a save state.
@@ -192,4 +213,4 @@ These are left to the implementation, and two implementations may differ on them
 
 ## Implementations
 
-[PCSX-Redux](https://github.com/pcsx-redux/pcsx-redux) writes packs from its SPU Samples window (Export SoundFont...) and plays them (Load replacements...).
+[PCSX-Redux](https://github.com/pcsx-redux/pcsx-redux) writes packs from its SPU Samples window (Export SoundFont...) and plays them (Load replacements...). Note records are written and read from [pcsx-redux#2685](https://github.com/pcsx-redux/pcsx-redux/pull/2685) on.
