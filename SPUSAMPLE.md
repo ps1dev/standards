@@ -24,7 +24,7 @@ A sample's start address is the voice's start address register at key-on, multip
 
 If the walk reaches address 0x80000 without finding a loop end bit, the sample has no extent and no signature, and it is never replaced. The walk does not wrap around to address 0.
 
-The loop block of a sample is the last block of its extent, the last block included, that has the loop start bit set. A sample loops when its last block has the repeat bit set and it has a loop block. These two properties are used when exporting a sample (see [Writing a pack](#writing-a-pack)); they are not part of the signature.
+The loop block of a sample is the last block of its extent, the last block included, that has the loop start bit set. A sample loops when its last block has the repeat bit set and it has a loop block. A sample whose last block has the repeat bit set but which has no loop block jumps, at its end, to the address in the voice's loop register, which the game sets. These properties are used when exporting a sample (see [Writing a pack](#writing-a-pack)); they are not part of the signature.
 
 ### Signature
 
@@ -127,7 +127,7 @@ A writer that exports samples from sound RAM so that the unedited pack plays bac
 - a record with the extent's size and N, the note written with four decimal places. N is 60 when the sample has no fundamental, and that is recorded too;
 - if the sample loops: a zone with `sampleModes` 1, a loop start of `(loop block address - start address) / 16 x 28` points, and a loop end equal to the number of points. The sample data then continues past the loop end with 8 points copied from the loop start; a player of the pack plays the loop and never reaches them.
 
-A loop address the game writes to a voice register is not part of a sample and is not exported.
+A sample whose last block has the repeat bit set and which has no loop block takes its loop from the voice's loop register: of the values the writer saw in that register at the sample's key-ons, the most frequent one is its loop block address, if it lies inside the extent. Otherwise, or when the writer saw no key-on with a known register value, the sample is exported as a one-shot. A loop address is never part of the signature.
 
 When a bank's comment would not fit every record, the records go into the comment before any other text the writer adds after its first paragraph, and the samples whose records do not fit are not replacements.
 
@@ -137,7 +137,7 @@ Played back unedited, such a pack gives N - K + C/100 = 0 to within the half-cen
 
 N is a fractional MIDI note: `69 + 12 x log2(f / 440)`, where f is the fundamental frequency of the original sample decoded at 44100 Hz. Note 69 is 440 Hz, which is A4 in scientific pitch notation. When the original has no fundamental, when that note is below 0, or when it rounds to a note above 127, N is 60.
 
-The original is decoded from its start address with the filter history cleared, as key-on does. A looping original is decoded round its loop until there are at least as many points past the loop start as the analysis needs, with the filter history carried across the loop as playback does. The analysis window is then:
+The original is decoded from its start address with the filter history cleared, as key-on does. A looping original, which includes a sample given its loop by the loop register as above, is decoded round its loop until there are at least as many points past the loop start as the analysis needs, with the filter history carried across the loop as playback does. The analysis window is then:
 
 - for a looping original, the 16384 points that follow the loop start, decoding round the loop;
 - for a one-shot original, up to 16384 points starting after its attack, where the attack is the first 2048 points or the first eighth of the sample, whichever is shorter.
