@@ -87,9 +87,9 @@ Sample rates and pitches below are in terms of the SPU's 44100 Hz output: a voic
 
 ### Key-on
 
-At each key-on, the player computes the extent and signature of the sample at the voice's start address, from sound RAM as it is at that key-on. If the pack has a replacement for that signature, the voice plays the replacement until its next key-on. Otherwise it plays the original.
+At each key-on, the player computes the extent and signature of the sample at the voice's start address, from sound RAM as it is at that key-on. If the pack has a replacement for that signature, and the replacement's record carries the extent's size, the voice plays the replacement until its next key-on. Otherwise it plays the original.
 
-The walk reads one byte per block and the hash reads every byte, so a player can compare the extent's size with the records' sizes first. A size that no record carries cannot match, and the player can skip the signature. No logger or other record of past key-ons is needed to play a pack. A pack loaded while a voice plays takes effect at that voice's next key-on.
+The walk reads one byte per block and the hash reads every byte, so a player can compare the extent's size with the records' sizes first. A size that no record carries cannot match, and the player can skip the signature. A player that does not compare sizes first gets the same result. No logger or other record of past key-ons is needed to play a pack. A pack loaded while a voice plays takes effect at that voice's next key-on.
 
 Voices in noise mode are not replaced.
 
@@ -125,9 +125,9 @@ A writer that exports samples from sound RAM so that the unedited pack plays bac
 - the sample data: the extent decoded with the filter history cleared, every block in order, 28 points per block, clamped to 16 bits, at rate 44100;
 - the root key: N rounded to the nearest note, and the correction: `(root key - N) x 100` cents rounded, limited to -50 to 50. When N is 60 because the sample has no fundamental or its note is out of range, the root key is 255, which readers take as 60, and the correction is 0;
 - a record with the extent's size and N, the note written with four decimal places. N is 60 when the sample has no fundamental, and that is recorded too;
-- if the sample loops: a zone with `sampleModes` 1, a loop start of `(loop block address - start address) / 16 x 28` points, and a loop end equal to the number of points. The sample data then continues past the loop end with 8 points copied from the loop start; a player of the pack plays the loop and never reaches them.
+- if the sample loops: a zone with `sampleModes` 1, a loop start of `(loop block address - start address) / 16 x 28` points, and a loop end equal to the number of points. The sample data then continues past the loop end with 8 points copied from the loop start; a player of the pack plays the loop and never reaches them. Only the first pass through the loop is exact: the original decodes each later pass with the filter history that its loop end left, while the replacement repeats the points of the first pass. Where those histories differ, so do the later passes.
 
-A sample whose last block has the repeat bit set and which has no loop block takes its loop from the voice's loop register: of the values the writer saw in that register at the sample's key-ons, the most frequent one is its loop block address, if it lies inside the extent. Otherwise, or when the writer saw no key-on with a known register value, the sample is exported as a one-shot. A loop address is never part of the signature.
+A sample whose last block has the repeat bit set and which has no loop block takes its loop from the voice's loop register: of the values the writer saw in that register at the sample's key-ons that lie inside the extent, the most frequent one is its loop block address, the lowest one on a tie. When no such value was seen, the sample is exported as a one-shot. A loop address is never part of the signature.
 
 When a bank's comment would not fit every record, the records go into the comment before any other text the writer adds after its first paragraph, and the samples whose records do not fit are not replacements.
 
