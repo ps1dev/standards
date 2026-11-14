@@ -66,15 +66,15 @@ The loop runs from `dwStartloop` up to, but not including, `dwEndloop`. In an SF
 
 Presets, instruments and all other generators (key ranges, tuning, envelopes, filters, stereo links) are ignored. A pack's replacements are reached through their names, never through a preset.
 
-### Note records
+### Sample records
 
-The bank's comment, the `ICMT` chunk of its `INFO` list read up to its first zero byte, records the note each original sample sounds at pitch 0x1000 (N, below), one line per sample:
+The bank's comment, the `ICMT` chunk of its `INFO` list read up to its first zero byte, holds one record per original sample: the size of its extent, and the note it sounds at pitch 0x1000 (N, below). Each record is one line:
 
 ```
-spu-note <signature> <note>
+spu-sample <signature> <size> <note>
 ```
 
-`spu-note`, one space, the signature as 16 hexadecimal digits, one space, and the note: one to three decimal digits, optionally followed by a `.` and one or more decimal digits. The note is less than 128. For example, `spu-note 849b04794e5240df 57.5000`.
+`spu-sample`, one space, the signature as 16 hexadecimal digits, one space, the size, one space, and the note. The size is the number of bytes the signature hashes, as one to six decimal digits: a multiple of 16, from 16 to 524288. The note is one to three decimal digits, optionally followed by a `.` and one or more decimal digits, and is less than 128. For example, `spu-sample 849b04794e5240df 48 57.5000`.
 
 Lines are separated by line feeds, and a carriage return before a line feed is ignored. A line that does not have exactly this form is not a record and is ignored, so the comment can carry other text. When two records carry the same signature, the later one is used. A record whose signature matches no replacement is ignored.
 
@@ -86,7 +86,9 @@ Sample rates and pitches below are in terms of the SPU's 44100 Hz output: a voic
 
 ### Key-on
 
-At each key-on, the player computes the extent and signature of the sample at the voice's start address, from sound RAM as it is at that key-on. If the pack has a replacement for that signature, the voice plays the replacement until its next key-on. Otherwise it plays the original. A pack loaded while a voice plays takes effect at that voice's next key-on.
+At each key-on, the player computes the extent and signature of the sample at the voice's start address, from sound RAM as it is at that key-on. If the pack has a replacement for that signature, the voice plays the replacement until its next key-on. Otherwise it plays the original.
+
+The walk reads one byte per block and the hash reads every byte, so when every replacement in the pack has a record, a player can compare the extent's size with the records' sizes first. A size that no record carries cannot match, and the player can skip the signature. No logger or other record of past key-ons is needed to play a pack. A pack loaded while a voice plays takes effect at that voice's next key-on.
 
 Voices in noise mode are not replaced.
 
@@ -112,7 +114,7 @@ When a looping replacement's playhead reaches its loop end, the loop length is s
 
 ### The original's note
 
-If the pack has a note record for the replacement's signature, N is the recorded note.
+If the pack has a record for the replacement's signature, N is the recorded note.
 
 A pack with no record for a replacement is a legacy pack, and the player measures N itself from the original sample. Two players whose measurements of N differ play that replacement at pitches that differ by the same amount, so a writer always records N. The measurement is the one a writer makes, described here.
 
@@ -132,7 +134,7 @@ A writer that exports samples from sound RAM so that the unedited pack plays bac
 - the name: its signature, 16 lowercase hexadecimal digits;
 - the sample data: the extent decoded with the filter history cleared, every block in order, 28 points per block, clamped to 16 bits, at rate 44100;
 - the root key: N rounded to the nearest note, and the correction: `(root key - N) x 100` cents rounded, limited to -50 to 50. When N is 60 because the sample has no fundamental or its note is out of range, the root key is 255, which readers take as 60, and the correction is 0;
-- a note record with N, written with four decimal places. N is 60 when the sample has no fundamental, and that is recorded too;
+- a record with the extent's size and N, the note written with four decimal places. N is 60 when the sample has no fundamental, and that is recorded too;
 - if the sample loops: a zone with `sampleModes` 1, a loop start of `(loop block address - start address) / 16 x 28` points, and a loop end equal to the number of points. The sample data then continues past the loop end with 8 points copied from the loop start; a player of the pack plays the loop and never reaches them.
 
 A loop address the game writes to a voice register is not part of a sample and is not exported.
@@ -188,7 +190,7 @@ V6, blocks from 0x7ffd0 to the end of sound RAM with no loop end bit: no extent,
 
 ### Reference pack
 
-[spusample/reference.sf2](spusample/reference.sf2) (6668 bytes, MD5 `31fc630f0a9e14da6024a10bab65314f`) has three samples, and its comment carries one note record, `spu-note 849b04794e5240df 57.5000`:
+[spusample/reference.sf2](spusample/reference.sf2) (6672 bytes, MD5 `e4af51c6a7e88b5fd366a1efad0fa999`) has three samples, and its comment carries one record, `spu-sample 849b04794e5240df 48 57.5000`:
 
 | Sample header      | Points | Rate  | Root key | Correction | Loop       |
 |--------------------|--------|-------|----------|------------|------------|
@@ -204,7 +206,7 @@ At pitch 0x1000 the playhead of the V2 replacement advances 0.513463394 points p
 
 These are left to the implementation, and two implementations may differ on them:
 
-- The fundamental frequency estimator used for a legacy replacement, one with no note record.
+- The fundamental frequency estimator used for a legacy replacement, one with no record.
 - How the replacement is interpolated between its points, and across its loop.
 - The exact moment within a key-on at which sound RAM is read for the signature, relative to transfers into sound RAM that are in progress.
 - What happens to a playing replacement when emulator state is restored from a save state.
@@ -213,4 +215,4 @@ These are left to the implementation, and two implementations may differ on them
 
 ## Implementations
 
-[PCSX-Redux](https://github.com/pcsx-redux/pcsx-redux) writes packs from its SPU Samples window (Export SoundFont...) and plays them (Load replacements...). Note records are written and read from [pcsx-redux#2685](https://github.com/pcsx-redux/pcsx-redux/pull/2685) on.
+[PCSX-Redux](https://github.com/pcsx-redux/pcsx-redux) writes packs from its SPU Samples window (Export SoundFont...) and plays them (Load replacements...). Sample records are written and read from [pcsx-redux#2685](https://github.com/pcsx-redux/pcsx-redux/pull/2685) on.
