@@ -4,6 +4,8 @@ This document describes how to identify an ADPCM sample in PlayStation 1 sound R
 
 The pack is an ordinary SoundFont 2 file, so it can be opened and edited in any SoundFont editor. What this document adds is the meaning of the sample names, the pitch rules, and what a player does at key-on.
 
+Playing a pack is the simpler half and the one most implementations need: the extent walk, the signature, the records and the pitch rule. Writing a pack also needs a pitch estimator and the loop rules of [Writing a pack](#writing-a-pack). The Python snippets below are reference sketches of each step, with error handling left to the reader. For how the SPU decodes ADPCM and plays voices, see the [psx-spx Sound Processing Unit](https://psx-spx.consoledev.net/soundprocessingunitspu/) page.
+
 ## Sample signature
 
 ### Sound RAM and blocks
@@ -33,6 +35,22 @@ The signature is the MD5 digest ([RFC 1321](https://www.rfc-editor.org/rfc/rfc13
 Writers use lowercase digits. Readers accept either case.
 
 Only the extent's bytes go into the signature. The address the sample is stored at does not, so the same sample uploaded to another address has the same signature, and neither does any loop address the game writes to a voice register.
+
+```python
+import hashlib
+
+def extent(ram, start_register):
+    start = (start_register * 8) & ~15
+    for addr in range(start, 0x80000, 16):
+        if ram[addr + 1] & 0x01:          # loop end: this is the last block
+            return start, addr + 16
+    return None                           # no loop end before 0x80000: no signature
+
+def signature(ram, start, end):
+    return int.from_bytes(hashlib.md5(ram[start:end]).digest()[:8], 'big')
+```
+
+MD5 is used because every language ships it in its standard library; no security property is needed. Its output is cut to 64 bits. Sound RAM holds at most 32768 extents (16 bytes each), and the chance that two different extents in one sound RAM image share a 64-bit signature is below n squared over 2 to the 65th ([birthday problem](https://en.wikipedia.org/wiki/Birthday_problem)): about 3 x 10^-11 at that maximum, and about 2 x 10^-15 for 300 samples. Speed was measured against xxHash on one x86-64 core: hashing 512 KiB, the largest extent a single key-on can have, takes about 1.06 ms with MD5 and 0.056 ms with XXH64. Over a whole game soundtrack (90 tracks) the busiest second of key-ons hashed 439040 bytes, about 0.9 ms of MD5 per second of playback before the size check described in [Key-on](#key-on), which was judged small enough to keep a hash every standard library has.
 
 ## Pack format
 
@@ -79,6 +97,29 @@ spu-sample <signature> <size> <note>
 
 Lines are separated by line feeds, and a carriage return before a line feed is ignored. A line that does not have exactly this form is not a record and is ignored, so the comment can carry other text. When two records carry the same signature, the later one is used. A record whose signature matches no replacement is ignored.
 
+A pack author can keep a note about a sample in the same comment, as a line `spu-note <signature> <text>` whose text runs to the end of the line. It is not a record, so readers ignore it like any other text.
+
+```python
+import re
+
+RECORD = re.compile(r'spu-sample ([0-9a-fA-F]{16}) ([0-9]{1,6}) ([0-9]{1,3}(\.[0-9]+)?)')
+
+def read_records(icmt):                   # icmt: the ICMT chunk's bytes
+    records = {}
+    for line in icmt.split(b'\0', 1)[0].decode('latin-1').split('\n'):
+        if line.endswith('\r'):
+            line = line[:-1]
+        m = RECORD.fullmatch(line)
+        if not m:
+            continue
+        size, note = int(m[2]), float(m[3])
+        if size % 16 == 0 and 16 <= size <= 524288 and note < 128:
+            records[int(m[1], 16)] = (size, note)    # a later record replaces an earlier one
+    return records
+```
+
+A replacement is then any SoundFont sample whose name is 16 hexadecimal digits with a record for that signature; reading the samples themselves is ordinary SoundFont parsing.
+
 The records live in the comment because SoundFont editors keep it: Polyphone 2.2, re-saving a bank, keeps `ICMT` byte for byte and drops both a private `INFO` sub-chunk and a private top-level `LIST`.
 
 ## Playing a pack
@@ -90,6 +131,23 @@ Sample rates and pitches below are in terms of the SPU's 44100 Hz output: a voic
 At each key-on, the player computes the extent and signature of the sample at the voice's start address, from sound RAM as it is at that key-on. If the pack has a replacement for that signature, and the replacement's record carries the extent's size, the voice plays the replacement until its next key-on. Otherwise it plays the original.
 
 The walk reads one byte per block and the hash reads every byte, so a player can compare the extent's size with the records' sizes first. A size that no record carries cannot match, and the player can skip the signature. A player that does not compare sizes first gets the same result. No logger or other record of past key-ons is needed to play a pack. A pack loaded while a voice plays takes effect at that voice's next key-on.
+
+```python
+def key_on(voice, ram, pack):
+    voice.replacement = None
+    found = extent(ram, voice.start_register)
+    if found is None or voice.noise:
+        return
+    start, end = found
+    if end - start not in pack.sizes:      # optional shortcut, same result
+        return
+    rep = pack.replacements.get(signature(ram, start, end))
+    if rep is not None and rep.size == end - start:
+        voice.replacement = rep
+        voice.position = 0.0
+```
+
+A player may cache extents and signatures by start address, provided it drops what a write can change. The game changes sound RAM only by transfers (DMA or manual writes), but the SPU writes two areas by itself: the capture buffers at 0x0000-0x0FFF, and, while reverb is on, the reverb work area from the reverb base address to the end of sound RAM. A cache that is cleared on every transfer and never holds an extent overlapping those areas gives the same result as no cache.
 
 Voices in noise mode are not replaced.
 
@@ -112,6 +170,18 @@ where `step` is the voice's sample step for that output sample, in points of the
 So a replacement whose root key and correction describe its own pitch sounds the same note as the original at every pitch the game plays it at, whatever note the original was recorded on.
 
 When a looping replacement's playhead reaches its loop end, the loop length is subtracted until it is back inside the loop. When a replacement that does not loop runs past its last point, the voice is silent for the rest of the note; it does not fall back to the original.
+
+```python
+def advance(voice, step):                 # step: original points per output sample, FM included
+    rep = voice.replacement
+    root = 60 if rep.root_key == 255 else rep.root_key
+    voice.position += step * rep.rate / 44100 * 2 ** ((rep.note - root) / 12 + rep.correction / 1200)
+    if rep.loops:
+        while voice.position >= rep.loop_end:
+            voice.position -= rep.loop_end - rep.loop_start
+    elif voice.position >= len(rep.points):
+        voice.silent = True               # until the next key-on
+```
 
 ### The original's note
 
@@ -142,7 +212,7 @@ The original is decoded from its start address with the filter history cleared, 
 - for a looping original, the 16384 points that follow the loop start, decoding round the loop;
 - for a one-shot original, up to 16384 points starting after its attack, where the attack is the first 2048 points or the first eighth of the sample, whichever is shorter.
 
-The estimator that finds f in that window is not specified. Because N is recorded, a player never depends on it.
+The estimator that finds f in that window is not specified. Because N is recorded, a player never depends on it. PCSX-Redux uses YIN (A. de Cheveigné and H. Kawahara, "YIN, a fundamental frequency estimator for speech and music", Journal of the Acoustical Society of America 111(4), 2002); any estimator will do.
 
 ## Test vectors
 
@@ -213,6 +283,12 @@ These are left to the implementation, and two implementations may differ on them
 - What happens to a playing replacement when emulator state is restored from a save state.
 - Loading more than one pack at once.
 - A version marker. A pack has none beyond the SoundFont version in its `ifil` chunk.
+
+## References
+
+- [psx-spx: Sound Processing Unit](https://psx-spx.consoledev.net/soundprocessingunitspu/): sound RAM, ADPCM blocks, voices and pitch.
+- [SoundFont 2.04 specification](https://www.synthfont.com/sfspec24.pdf). Libraries that read it include [FluidSynth](https://www.fluidsynth.org/) and, for Python, [sf2utils](https://pypi.org/project/sf2utils/). [Polyphone](https://www.polyphone.io/) edits packs and keeps the records.
+- RFC 1321 for MD5, and de Cheveigné and Kawahara (2002) for the YIN estimator.
 
 ## Implementations
 
