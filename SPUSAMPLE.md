@@ -118,7 +118,7 @@ def read_records(icmt):                   # icmt: the ICMT chunk's bytes
     return records
 ```
 
-A replacement is then any SoundFont sample whose name is 16 hexadecimal digits with a record for that signature; reading the samples themselves is ordinary SoundFont parsing.
+A replacement is then any SoundFont sample header that meets the four conditions above, the record for its signature being one of them; reading the samples themselves is ordinary SoundFont parsing.
 
 The records live in the comment because SoundFont editors keep it: Polyphone 2.2, re-saving a bank, keeps `ICMT` byte for byte and drops both a private `INFO` sub-chunk and a private top-level `LIST`.
 
@@ -135,6 +135,7 @@ The walk reads one byte per block and the hash reads every byte, so a player can
 ```python
 def key_on(voice, ram, pack):
     voice.replacement = None
+    voice.silent = False
     found = extent(ram, voice.start_register)
     if found is None or voice.noise:
         return
@@ -174,11 +175,12 @@ When a looping replacement's playhead reaches its loop end, the loop length is s
 ```python
 def advance(voice, step):                 # step: original points per output sample, FM included
     rep = voice.replacement
-    root = 60 if rep.root_key == 255 else rep.root_key
+    root = 60 if rep.root_key > 127 else rep.root_key
     voice.position += step * rep.rate / 44100 * 2 ** ((rep.note - root) / 12 + rep.correction / 1200)
     if rep.loops:
-        while voice.position >= rep.loop_end:
-            voice.position -= rep.loop_end - rep.loop_start
+        if voice.position >= rep.loop_end:     # same as subtracting the loop length until inside
+            length = rep.loop_end - rep.loop_start
+            voice.position = rep.loop_start + (voice.position - rep.loop_start) % length
     elif voice.position >= len(rep.points):
         voice.silent = True               # until the next key-on
 ```
@@ -197,7 +199,7 @@ A writer that exports samples from sound RAM so that the unedited pack plays bac
 - a record with the extent's size and N, the note written with four decimal places. N is 60 when the sample has no fundamental, and that is recorded too;
 - if the sample loops: a zone with `sampleModes` 1, a loop start of `(loop block address - start address) / 16 x 28` points, and a loop end equal to the number of points. The sample data then continues past the loop end with 8 points copied from the loop start; a player of the pack plays the loop and never reaches them. Only the first pass through the loop is exact: the original decodes each later pass with the filter history that its loop end left, while the replacement repeats the points of the first pass. Where those histories differ, so do the later passes.
 
-A sample whose last block has the repeat bit set and which has no loop block takes its loop from the voice's loop register: of the values the writer saw in that register at the sample's key-ons that lie inside the extent, the most frequent one is its loop block address, the lowest one on a tie. When no such value was seen, the sample is exported as a one-shot. A loop address is never part of the signature.
+A sample whose last block has the repeat bit set and which has no loop block takes its loop from the voice's loop register: of the values the writer saw in that register at the sample's key-ons that lie inside the extent, the most frequent one is its loop block address, the lowest one on a tie. When no such value was seen, the sample is exported as a one-shot. A loop address is never part of the signature, so when a game keys the same sample bytes with different loop addresses inside them, the pack carries the chosen loop for all of those key-ons and plays back unchanged only for the ones that used it.
 
 When a bank's comment would not fit every record, the records go into the comment before any other text the writer adds after its first paragraph, and the samples whose records do not fit are not replacements.
 
