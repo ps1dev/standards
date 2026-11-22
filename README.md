@@ -8,8 +8,9 @@ file written by one of them can be read by the others.
 | GPU dump | [GPUDUMP.md](GPUDUMP.md) | A stream of GPU commands captured over a timespan, replayable on an emulator or on hardware. |
 | SPU dump | [SPUDUMP.md](SPUDUMP.md) | A stream of SPU register writes, for capture and replay and for tracker-style playback. |
 | PS Music | [PSM.md](PSM.md) | MIDI preprocessed into fixed-size events, paired with a VAB bank, for a player to walk at runtime. |
+| SPU sample replacement | [SPUSAMPLE.md](SPUSAMPLE.md) | Content signatures for ADPCM samples in sound RAM, and SoundFont packs of replacements keyed by them. |
 
-All three are packet-based, 32-bit aligned, little-endian and extensible: a reader skips
+The dump and music formats are packet-based, 32-bit aligned, little-endian and extensible: a reader skips
 packet types it does not know using the length field, so an old tool keeps working
 against a newer file.
 
